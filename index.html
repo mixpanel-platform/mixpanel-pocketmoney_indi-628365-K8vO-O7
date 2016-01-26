@@ -164,8 +164,8 @@
         xau('week', 24, wauGraph);
         xau('month', 12, mauGraph);
         
-        usage('Matched_Participated', 'matches');
-        formula('Rated_IRatedSomeone', 'Session', '', 'datetime(' + moment()._d.getTime() + ') > properties["Created"]', rateFormulaGraph)
+        usage('Local Coupon Checkout', 'coupons');
+        formula('Local Coupon Clicked', 'App Start', '', 'datetime(' + moment()._d.getTime() + ') > properties["Created"]', rateFormulaGraph)
       };
       
       runQuery();
