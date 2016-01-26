@@ -84,7 +84,7 @@
       var mauGraph = $('#MAU').MPChart({chartType: 'line'});
 
       function xau(unit, count, graph) {
-        MP.api.segment('Session', null, {         
+        MP.api.segment('App Start', null, {         
             from: moment().subtract(count, unit + 's'),
             to: moment(),
             unit: unit,
@@ -215,7 +215,7 @@
         return newData;
       }
     
-      MP.api.retention('Session', {
+      MP.api.retention('App Start', {
           from: moment().subtract(24, 'weeks'), 
           to: moment(),
           unit: 'week',
