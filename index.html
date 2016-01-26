@@ -4,12 +4,248 @@
     <meta charset="utf-8">
     <link rel="stylesheet" type="text/css" href="https://cdn.mxpnl.com/libs/mixpanel-platform/css/reset.css">
     <link rel="stylesheet" type="text/css" href="https://cdn.mxpnl.com/libs/mixpanel-platform/build/mixpanel-platform.v0.latest.min.css">
+    <link rel="stylesheet" type="text/css" href="//cdn.mxpnl.com/cache/9e9632a64a0af61b0d4c53c4672afcc6/bundle/retention.min.css">
     <script src="https://cdn.mxpnl.com/libs/mixpanel-platform/build/mixpanel-platform.v0.latest.min.js"></script>
   </head>
   <body class="mixpanel-platform-body">
-    <h1>Hello, World!</h1>
+    <div class="mixpanel-platform-section">
+      <h2>Daily Active Users (DAUs)</h2>
+      <div id="DAU"></div>
+      <h2>Weekly Active Users (WAUs)</h2>
+      <div id="WAU"></div>
+      <h2>Monthly Active Users (MAUs)</h2>
+      <div id="MAU"></div>
+    </div>
+    <div class="mixpanel-platform-section">
+      <h2>Matches</h2>
+      <div id="matches"></div>
+    </div>
+    <div class="mixpanel-platform-section">
+      <h2>Unique Rates / Unique Sessions</h2>
+      <div id="rateFormula"></div>
+    </div>
+    <div class="mixpanel-platform-section">
+      <div><h2>Retention: Registered then came back and did a Session</h2></div>
+      <div id="table4"></div>    
+    </div>
+    
+    <style>
+      h2 {
+        font-size: 20px;
+        margin: 20px 0 10px;
+      }
+      .data_heat_5 {
+        background-color: #4c7cb8;
+        color:white;
+      }
+      .data_heat_4 {
+        background-color: #2b93d5;
+        color:white;
+      }
+      .data_heat_3 {
+        background-color: #62afe9;
+        color:white;
+      }
+      .data_heat_2 {
+        background-color: #97c8eb;
+        color:white;
+      }
+      .data_heat_1 {
+        background-color: #97c8eb;
+        color:white;
+      }
+    </style>
+    
     <script>
-      // Run queries and display results here
+      function padDigits(number, digits) {
+        return Array(Math.max(digits - String(number).length + 1, 0)).join(0) + number;
+      }
+      
+      function calcRetentionClass(number) {
+        if (number > 55) {
+          return "data_heat_5";
+        }
+        else if (number > 45) {
+          return "data_heat_4";
+        }
+        else if (number > 35) {
+          return "data_heat_3";
+        }
+        else if (number > 25) {
+          return "data_heat_2";
+        }
+      
+        return "data_heat_1";
+      }
+
+    // active users
+      var dauGraph = $('#DAU').MPChart({chartType: 'line'});
+      var wauGraph  = $('#WAU').MPChart({chartType: 'line'});
+      var mauGraph = $('#MAU').MPChart({chartType: 'line'});
+
+      function xau(unit, count, graph) {
+        MP.api.segment('Session', null, {         
+            from: moment().subtract(count, unit + 's'),
+            to: moment(),
+            unit: unit,
+            type: 'unique',
+            where: 'string(properties["Created"]) != "undefined" and string(properties["Created"]) != "null"'
+        }).done(function(results) {
+          graph.MPChart('setData', results);
+        });
+      }
+      
+    // usage metrics
+      function usage(event, div) {
+        var $div = $('#' + div);
+        var selectDiv = $('<div id="' + div + 'Select"></div>').appendTo($div);
+        // define dropdown options for Daily/Weekly/Monthly options
+        var intervalSelect = {items:[{value: "day", label: "Daily"},{value: "week", label: "Weekly"},{value: "month", label: "Monthly"}]}
+        selectDiv.MPSelect(intervalSelect);
+        
+        var graphDiv = $('<div id="' + div + 'Graph"></div>').appendTo($div);
+        graphDiv.MPChart({chartType: 'line'});
+        
+        usageData('day', 30, event, graphDiv);
+
+        selectDiv.on('change', function() {
+          var unit = selectDiv.val();
+          var count = unit === 'day' ? 30 : unit === 'week' ? 24 : 12;
+          usageData(unit, count, event, graphDiv);
+        });
+      }
+
+      function usageData(unit, count, event, graphDiv) {
+        var promises = [];
+        var unique = new Promise(function(resolve,reject) {
+          MP.api.segment(event, {
+            from: moment().subtract(count, unit + 's'),
+            to: moment(),
+            unit: unit,
+            type: 'unique'
+          }).done(function(result){
+            resolve(result.values());
+          });
+        });
+        var total = new Promise(function(resolve,reject){
+          MP.api.segment(event, {
+            from: moment().subtract(count, unit + 's'),
+            to: moment(),
+            unit: unit,
+            type: 'general'
+          }).done(function(result){
+            resolve(result.values());
+          });
+        });
+        promises.push(unique, total);
+        
+        Promise.all(promises).then(function(data) {
+          graphDiv.MPChart('addSeries', data[0]);
+          graphDiv.MPChart('addSeries', data[1]);
+        });
+      }
+      
+    // formulas
+      var rateFormulaGraph = $('#rateFormula').MPChart({chartType: 'line'});
+      
+      function formula(event1, event2, where1, where2, div) {
+        MP.api.query('/api/2.0/formulas', {
+          formulas: [{"queries": [{"events": [event1], "count_type": "unique", "selector": where1}, {"events": [event2], "count_type": "unique", "selector": where2}], "formula": "(A)/(B)"}],
+            from: moment().subtract(30, 'days'),
+            to: moment(),
+            unit: 'day',
+        }).done(function(results) {
+          div.MPChart('addSeries', {Ratio: results.data.values[0]});
+        });
+      }
+      
+      var runQuery = function() {
+        xau('day', 30, dauGraph);
+        xau('week', 24, wauGraph);
+        xau('month', 12, mauGraph);
+        
+        usage('Matched_Participated', 'matches');
+        formula('Rated_IRatedSomeone', 'Session', '', 'datetime(' + moment()._d.getTime() + ') > properties["Created"]', rateFormulaGraph)
+      };
+      
+      runQuery();
+      
+    // retention
+      function flattenRetentionData(results) {
+        var data = results.values();
+        var newData = {};
+      
+        
+        // get sorted list of keys and max idx
+        var maxIdx = 0;
+        var keys = [];
+        for(var key in data){
+            var curMaxIdx = Object.keys(data[key].counts).length;
+            if (curMaxIdx > maxIdx) {
+              maxIdx = curMaxIdx;
+            }
+            if(data.hasOwnProperty(key)){
+                keys.push(key);
+            }
+        }
+        keys.sort();
+
+        // create our newData structure
+        for (var i = 0; i < keys.length; i++) {
+          var key = keys[i];
+          newData[key] = {};
+          var newDateItem = newData[key];
+          var dateItem = data[key];
+          
+          newDateItem["People"] = dateItem.first;
+          
+          for (idx = 0; idx <= maxIdx; idx++) {
+            var propName = "Week " + padDigits(idx, 2);
+            if(dateItem.counts[idx]) {
+              var amount = dateItem.counts[idx];
+              var percent = ((amount / dateItem.first) * 100).toFixed(2);
+              newDateItem[propName] = percent + "%";
+            }
+            else {
+               newDateItem[propName] = " ";
+            }
+          }
+        }
+        
+        return newData;
+      }
+    
+      MP.api.retention('Session', {
+          from: moment().subtract(24, 'weeks'), 
+          to: moment(),
+          unit: 'week',
+          retention_type: 'born',
+          born_event: 'Registered',
+          limit:1000,
+          segment_method: 'first',
+          interval_count: 24
+        
+      }).done(function(results) {
+        
+        var newData = flattenRetentionData(results)
+        
+        // render the data
+        var mpdata = MP.Data.inst(newData);
+        var retentionChart = $('#table4').MPTable({firstColHeader: 'Sessions'});
+        retentionChart.MPTable('setData', mpdata);
+        
+        $(".mp_chart_cell span").each(function(index) {
+           var txt = $(this).text();
+           if (txt) {
+             var num = txt.substr(0, txt.length - 1);
+             var lastChar = txt.substr(txt.length - 1);
+             if (lastChar == "%") {
+               var cl = calcRetentionClass(num);
+               $(this).parent().addClass(cl);
+             }
+           }
+        });
+      });
     </script>
   </body>
 </html>
